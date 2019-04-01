@@ -15,10 +15,11 @@ MotorController::MotorController()
     Dw = 45.5;
     w = 2.3;
     pwrTurn = 10;
-    sensoreOn = true;
+    sensoreModeOn = true;
+    senPort = S1;
 }
 
-MotorController::MotorController(tMotor portLeft, tMotor portRight, bool Sensore)
+MotorController::MotorController(tMotor portLeft, tMotor portRight, bool SensoreMode, tSensor sensorPort)
 {
     port_L = portLeft;
     port_R = portRight;
@@ -26,10 +27,11 @@ MotorController::MotorController(tMotor portLeft, tMotor portRight, bool Sensore
     Dw = 45.5;
     w = 2.3;
     pwrTurn = 10;
-    sensoreOn = Sensore;
+    sensoreModeOn = SensoreMode;
+    senPort = sensorPort;
 }
 
-MotorController::MotorController(tMotor Left, tMotor Right, float robotRadius, float Dw, float w, int pwrTurn, bool Sensore)
+MotorController::MotorController(tMotor Left, tMotor Right, float robotRadius, float Dw, float w, int pwrTurn, bool SensoreMode, tSensor sensorPort)
 {
     port_L = Left;
     port_R = Right;
@@ -37,35 +39,90 @@ MotorController::MotorController(tMotor Left, tMotor Right, float robotRadius, f
     this -> Dw = Dw;
     this -> w = w;
     this ->pwrTurn = pwrTurn;
-    sensoreOn = Sensore;
+    sensoreModeOn = SensoreMode;
+    senPort = sensorPort;
 }
 //-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-
 
-void MotorController::Move(int speed,float distance)
+void MotorController::SensoreOn()
 {
-    float Dist = distance;
-    resetMotorEncoder(port_L);
-    resetMotorEncoder(port_R);
-    setMotorSpeed(port_L, speed);
-    setMotorSpeed(port_R, speed);
-
-    while((getMotorEncoder(port_L) < Dist / (PI * Dw) * 360) || (getMotorEncoder(port_R) < Dist / (PI * Dw) * 360))
+    if(sensoreModeOn == true)
     {
-
-        if((getMotorEncoder(port_L) > 0.9 * Dist / (PI * Dw) * 360) ||
-           (getMotorEncoder(port_R) > 0.9 * Dist / (PI * Dw) * 360))
-        {
-            setMotorSpeed(port_L, 10);
-            setMotorSpeed(port_R, 10);
-        }
-        delay(1);
+        SensoreStatus_ = true;
     }
-    setMotorSpeed(port_L,0);
-    setMotorSpeed(port_R,0);
-    //delay(1000);
+    else
+    {
+        displayTextLine(3,"No Sensore detected");
+        SensoreStatus_ = false;
+        delay(5000);
+    }
 }
 
-void MotorController::Turn(float angle)
+void MotorController::SensoreOff()
+{
+    if(sensoreModeOn == true)
+    {
+        SensoreStatus_ = false;
+    }
+    else
+    {
+        displayTextLine(3,"No Sensore detected");
+        SensoreStatus_ = false;
+        delay(5000);
+    }
+
+}
+
+void MotorController::Move(int speed,float distance, int delay_)
+{
+    auto j1  = std::async([this, distance]
+                          {
+        float Dist = distance;
+        getMotorEncoder(port_L);
+        while ((getMotorEncoder(port_L) < Dist / (PI * Dw) * 360) || (getMotorEncoder(port_R) < Dist / (PI * Dw) * 360)) {
+            if (SensoreStatus_ == true) {
+                this->sensoreDistance = getSensorValue(this->senPort);
+                if (sensoreDistance <= 55) {
+                    this->SensoreDangerDistance_ = true;
+                }
+                else
+                {
+                    this -> SensoreDangerDistance_ = false;
+                }
+            }
+        }
+                          });
+
+    auto j2 = std::async([this, distance, speed, delay_] {
+        float Dist = distance;
+        resetMotorEncoder(port_L);
+        resetMotorEncoder(port_R);
+
+        while ((getMotorEncoder(port_L) < Dist / (PI * Dw) * 360) ||
+               (getMotorEncoder(port_R) < Dist / (PI * Dw) * 360)) {
+            if(this -> SensoreDangerDistance_ == false) {
+                setMotorSpeed(port_L, speed);
+                setMotorSpeed(port_R, speed);
+                if ((getMotorEncoder(port_L) > 0.9 * Dist / (PI * Dw) * 360) ||
+                    (getMotorEncoder(port_R) > 0.9 * Dist / (PI * Dw) * 360)) {
+                    setMotorSpeed(port_L, 10);
+                    setMotorSpeed(port_R, 10);
+                }
+                delay(1);
+            }
+            else
+            {
+                setMotorSpeed(port_L, 0);
+                setMotorSpeed(port_R, 0);
+            }
+        }
+        setMotorSpeed(port_L, 0);
+        setMotorSpeed(port_R, 0);
+        delay(delay_);
+    });
+}
+
+void MotorController::Turn(float angle, int delay_)
 {
     resetMotorEncoder(port_L);
     setMotorSpeed(port_L, pwrTurn * sgn(angle));
@@ -77,87 +134,127 @@ void MotorController::Turn(float angle)
     }
     setMotorSpeed(port_L,0);
     setMotorSpeed(port_R,0);
-    delay(1000);
+    delay(delay_);
 }
 
-void  MotorController::CircularMoveLeft(float radius, float distance_w)
-{
-    float distance_l = 2*PI*radius, distance_r = 2*PI*(radius + Dr);
+void  MotorController::CircularMoveLeft(float radius, float distance_w, int delay_) {
+
+    float distance_l = 2 * PI * radius, distance_r = 2 * PI * (radius + Dr);
+
+    auto jS  = std::async([this,distance_r,distance_w] {
+        getMotorEncoder(port_R);
+        while (getMotorEncoder(port_R) < (distance_r * distance_w) / (PI * Dw) * 360) {
+            if (SensoreStatus_ == true) {
+                this->sensoreDistance = getSensorValue(this->senPort);
+                if (sensoreDistance <= 55) {
+                    this->SensoreDangerDistance_ = true;
+                } else {
+                    this->SensoreDangerDistance_ = false;
+                }
+            }
+        }
+    });
 
     //Поток для инкодера левого двигателя
-    auto j1 = std::async([this, distance_l, radius, distance_w]
-                         {
-                             resetMotorEncoder(port_L);
-                             resetMotorEncoder(port_R);
-                             setMotorSpeed(port_L, static_cast<int8_t>(this -> pwrCircularM / ((Dr + radius) / (radius))));
+    auto j1 = std::async([this, distance_l, radius, distance_w] {
+        resetMotorEncoder(port_L);
+        resetMotorEncoder(port_R);
 
-                             while(getMotorEncoder(port_L) < (distance_l * distance_w) / (PI * Dw) * 360 )
-                             {
-                                 if(getMotorEncoder(port_L) > 0.9 * (distance_l * distance_w) / (PI * Dw) * 360)
-                                 {
-                                     setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))));
-                                 }
-                                 if ((getMotorEncoder(port_R) / (Dr + radius) / (radius))  > getMotorEncoder(port_L))
-                                 {
-                                     setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) + 1);
-                                 }
-                                 if ((getMotorEncoder(port_R) / (Dr + radius) / (radius))  < getMotorEncoder(port_L))
-                                 {
-                                     setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) - 1);
-                                 }
-                                 delay(1);
-                             }
-                             setMotorSpeed(port_L, 0);
-                             this->pwrCircularM = 80;
-                         });
+        while (getMotorEncoder(port_L) < (distance_l * distance_w) / (PI * Dw) * 360) {
+            if(SensoreDangerDistance_ == false) {
+                setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))));
+                if (getMotorEncoder(port_L) > 0.9 * (distance_l * distance_w) / (PI * Dw) * 360) {
+                    setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))));
+                }
+                if ((getMotorEncoder(port_R) / (Dr + radius) / (radius)) > getMotorEncoder(port_L)) {
+                    setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) + 1);
+                }
+                if ((getMotorEncoder(port_R) / (Dr + radius) / (radius)) < getMotorEncoder(port_L)) {
+                    setMotorSpeed(port_L, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) - 1);
+                }
+                delay(1);
+            }
+            else
+            {
+                setMotorSpeed(port_L, 0);
+            }
+        }
+        setMotorSpeed(port_L, 0);
+        this->pwrCircularM = 80;
+    });
 
 
-    auto j2 = std::async([this, distance_r,radius, distance_w]
-                         {
-                             resetMotorEncoder(port_R);
-                             resetMotorEncoder(port_L);
-                             setMotorSpeed(port_R, this->pwrCircularM);
+    auto j2 = std::async([this, distance_r, radius, distance_w] {
+        resetMotorEncoder(port_R);
+        resetMotorEncoder(port_L);
 
-                             while(getMotorEncoder(port_R) < (distance_r * distance_w) / (PI * Dw) * 360 )
-                             {
-                                 if(getMotorEncoder(port_R) > 0.9 * (distance_r * distance_w) / (PI * Dw) * 360)
-                                 {
-                                     this->pwrCircularM = 30;
-                                     setMotorSpeed(port_R, this->pwrCircularM);
-                                 }
-                                 delay(1);
-                             }
-                             setMotorSpeed(port_R, 0);
-                         });
-    // delay(1000);
+
+        while (getMotorEncoder(port_R) < (distance_r * distance_w) / (PI * Dw) * 360) {
+            if(SensoreDangerDistance_ == false) {
+                setMotorSpeed(port_R, this->pwrCircularM);
+                if (getMotorEncoder(port_R) > 0.9 * (distance_r * distance_w) / (PI * Dw) * 360) {
+                    this->pwrCircularM = 30;
+                    setMotorSpeed(port_R, this->pwrCircularM);
+                }
+                delay(1);
+            }
+            else
+            {
+                setMotorSpeed(port_R, 0);
+            }
+        }
+        setMotorSpeed(port_R, 0);
+    });
+    delay(delay_);
 }
 
-void  MotorController::CircularMoveRight(float radius, float distance_w)
+void  MotorController::CircularMoveRight(float radius, float distance_w, int delay_)
 {
     float distance_l = 2*PI*(radius + Dr), distance_r = 2*PI*radius;
+
+    auto jS  = std::async([this,distance_l,distance_w] {
+        getMotorEncoder(port_L);
+        while (getMotorEncoder(port_L) < (distance_l * distance_w) / (PI * Dw) * 360) {
+            if (SensoreStatus_ == true) {
+                this->sensoreDistance = getSensorValue(this->senPort);
+                if (sensoreDistance <= 55) {
+                    this->SensoreDangerDistance_ = true;
+                } else {
+                    this->SensoreDangerDistance_ = false;
+                }
+            }
+        }
+    });
 
     //Поток для инкодера левого двигателя
     auto j1 = std::async([this, distance_r, radius, distance_w]
                          {
                              resetMotorEncoder(port_L);
                              resetMotorEncoder(port_R);
-                             setMotorSpeed(port_R, static_cast<int8_t>(this -> pwrCircularM / ((Dr + radius) / (radius))));
 
                              while(getMotorEncoder(port_R) < (distance_r * distance_w) / (PI * Dw) * 360 )
                              {
-                                 if(getMotorEncoder(port_R) > 0.9 * (distance_r * distance_w) / (PI * Dw) * 360)
-                                 {
-                                     setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))));
+                                 if(SensoreDangerDistance_ == false) {
+                                     setMotorSpeed(port_R, static_cast<int8_t>(this -> pwrCircularM / ((Dr + radius) / (radius))));
+                                     if (getMotorEncoder(port_R) > 0.9 * (distance_r * distance_w) / (PI * Dw) * 360) {
+                                         setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM /
+                                                                                   ((Dr + radius) / (radius))));
+                                     }
+                                     if ((getMotorEncoder(port_L) / (Dr + radius) / (radius)) >
+                                         getMotorEncoder(port_R)) {
+                                         setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM /
+                                                                                   ((Dr + radius) / (radius))) + 1);
+                                     }
+                                     if ((getMotorEncoder(port_L) / (Dr + radius) / (radius)) <
+                                         getMotorEncoder(port_R)) {
+                                         setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM /
+                                                                                   ((Dr + radius) / (radius))) - 1);
+                                     }
+                                     delay(1);
                                  }
-                                 if ((getMotorEncoder(port_L) / (Dr + radius) / (radius))  > getMotorEncoder(port_R))
-                                 {
-                                     setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) + 1);
+                                 else{
+                                     setMotorSpeed(port_R, 0);
                                  }
-                                 if ((getMotorEncoder(port_L) / (Dr + radius) / (radius))  < getMotorEncoder(port_R))
-                                 {
-                                     setMotorSpeed(port_R, static_cast<int8_t>(this->pwrCircularM / ((Dr + radius) / (radius))) - 1);
-                                 }
-                                 delay(1);
                              }
                              setMotorSpeed(port_R, 0);
                              this->pwrCircularM = 80;
@@ -168,25 +265,30 @@ void  MotorController::CircularMoveRight(float radius, float distance_w)
                          {
                              resetMotorEncoder(port_L);
                              resetMotorEncoder(port_R);
-                             setMotorSpeed(port_L, this->pwrCircularM);
 
                              while(getMotorEncoder(port_L) < (distance_l * distance_w) / (PI * Dw) * 360 )
                              {
-                                 if(getMotorEncoder(port_L) > 0.9 * (distance_l * distance_w) / (PI * Dw) * 360)
-                                 {
-                                     this->pwrCircularM = 30;
+                                 if(SensoreDangerDistance_ == false) {
                                      setMotorSpeed(port_L, this->pwrCircularM);
+                                     if (getMotorEncoder(port_L) > 0.9 * (distance_l * distance_w) / (PI * Dw) * 360) {
+                                         this->pwrCircularM = 30;
+                                         setMotorSpeed(port_L, this->pwrCircularM);
+                                     }
+                                     delay(1);
                                  }
-                                 delay(1);
+                                 else
+                                 {
+                                     setMotorSpeed(port_L, 0);
+                                 }
                              }
                              setMotorSpeed(port_L, 0);
                          });
-    //delay(1000);
+    delay(delay_);
 }
 
-void MotorController::SmoothTurn(float radius, float angle)
+void MotorController::SmoothTurn(float radius, float angle, int delay_)
 {
-    MotorController GoOn(port_L, port_R, Dr, Dw, w, pwrTurn, sensoreOn);
+    MotorController GoOn(port_L, port_R, Dr, Dw, w, pwrTurn, sensoreModeOn, senPort);
     float w = abs(((PI * radius * angle) / 180) / ((PI * radius * 360) / 180));
     if(angle > 0)
     {
@@ -196,4 +298,6 @@ void MotorController::SmoothTurn(float radius, float angle)
     {
         GoOn.CircularMoveLeft(radius,w);
     }
+    delay(delay_);
 }
+
