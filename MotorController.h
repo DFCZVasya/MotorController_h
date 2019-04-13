@@ -8,7 +8,7 @@
 #include <rbc.h>
 // MotorController.cpp
 //libstdc++.a
-//version 1.04.19
+//version 2.04.19
 
 class MotorController{
 public:
@@ -26,6 +26,8 @@ public:
     void CircularMoveRight(float radius, float distance_w, int delay_ = 0);
     //Функция закругленного поворота принимающая радиус поворота и угол на который надо повернуть
     void SmoothTurn(float radius, float angle, int delay_ = 0);
+
+    void Targeting(float distance_to_object);
 
     void SensoreOn();
     void SensoreOff();

@@ -73,24 +73,59 @@ void MotorController::SensoreOff()
 
 }
 
+void MotorController::Targeting(float distance_to_object)
+{
+    float k, diff;
+    if(sensoreModeOn == true) {
+        while (getSensorValue(senPort) <= 1500) {
+            if (getSensorValue(senPort) > distance_to_object)
+            {
+               diff = getSensorValue(senPort) - distance_to_object;
+               k = diff/255;
+               setMotorSpeed(port_L,1 + static_cast<int8_t>(k*100));
+               setMotorSpeed(port_R,1 + static_cast<int8_t>(k*100));
+               delay(1);
+            }
+            else if (getSensorValue(senPort) < distance_to_object)
+            {
+                diff = getSensorValue(senPort) - distance_to_object;
+                k = diff/255;
+                setMotorSpeed(port_L,-1 + static_cast<int8_t>(k*100));
+                setMotorSpeed(port_R,-1 + static_cast<int8_t>(k*100));
+                delay(1);
+            }
+            else if (getSensorValue(senPort) == distance_to_object)
+            {
+                setMotorSpeed(port_L, 0);
+                setMotorSpeed(port_R, 0);
+            }
+        }
+    }
+    else
+    {
+        displayTextLine(3, "No Sensore Detected");
+        delay(5000);
+    }
+}
+
 void MotorController::Move(int speed,float distance, int delay_)
 {
     auto j1  = std::async([this, distance]
                           {
-        float Dist = distance;
-        getMotorEncoder(port_L);
-        while ((getMotorEncoder(port_L) < Dist / (PI * Dw) * 360) || (getMotorEncoder(port_R) < Dist / (PI * Dw) * 360)) {
-            if (SensoreStatus_ == true) {
-                this->sensoreDistance = getSensorValue(this->senPort);
-                if (sensoreDistance <= 55) {
-                    this->SensoreDangerDistance_ = true;
-                }
-                else
-                {
-                    this -> SensoreDangerDistance_ = false;
-                }
-            }
-        }
+                              float Dist = distance;
+                              getMotorEncoder(port_L);
+                              while ((getMotorEncoder(port_L) < Dist / (PI * Dw) * 360) || (getMotorEncoder(port_R) < Dist / (PI * Dw) * 360)) {
+                                  if (SensoreStatus_ == true) {
+                                      this->sensoreDistance = getSensorValue(this->senPort);
+                                      if (sensoreDistance <= 55) {
+                                          this->SensoreDangerDistance_ = true;
+                                      }
+                                      else
+                                      {
+                                          this -> SensoreDangerDistance_ = false;
+                                      }
+                                  }
+                              }
                           });
 
     auto j2 = std::async([this, distance, speed, delay_] {
